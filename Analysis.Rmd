@@ -1,0 +1,557 @@
+---
+title: 'Analysis'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(patchwork)
+library(ggforce)
+```
+
+```{r, include=FALSE}
+elements = list('R0' = "(0, 0, 0, 0)", 
+                'R1' = "(0, 0, 0, 1)", 
+                'R2' = "(0, 0, 1, 0)", 
+                'R3' = "(0, 0, 1, 1)", 
+                'R4' = "(0, 1, 0, 0)",
+                'R5' = "(0, 1, 0, 1)", 
+                'R6' = "(0, 1, 1, 0)", 
+                'R7' = "(0, 1, 1, 1)", 
+                'R8' = "(1, 0, 0, 0)", 
+                'R9' = "(1, 0, 0, 1)",
+                'R10' = "(1, 0, 1, 0)", 
+                'R11' = "(1, 0, 1, 1)", 
+                'R12' = "(1, 1, 0, 0)", 
+                'R13' = "(1, 1, 0, 1)", 
+                'R14' = "(1, 1, 1, 0)",
+                'R15' = "(1, 1, 1, 1)"
+)
+
+elements_labeller <- function(variable,value){
+  return(elements[value])
+}
+
+```
+
+## The Boolean Universe
+
+```{r}
+obs = c('0000', '0001', '0010', '0011', '0100', '0101', '0110', '0111', 
+        '1000', '1001', '1010', '1011', '1100', '1101', '1110', '1111')
+
+universe = data.frame(objs = obs) %>%
+  mutate(p = substr(objs, 1, 1) %>% as.numeric(),
+         q = substr(objs, 2, 2) %>% as.numeric(),
+         r = substr(objs, 3, 3) %>% as.numeric(),
+         s = substr(objs, 4, 4) %>% as.numeric())
+
+p = universe$p
+q = universe$q
+r = universe$r
+s = universe$s
+
+O = function(a, b){
+  1*(a + b > 0)
+}
+
+N = function(a){
+  1*(a==0)
+}
+
+d = read.csv('Booleans/lengths.csv')
+d = read.csv('Booleans/formulas.csv') %>%
+  select(category, formula=`X1_0_1_0_0_0_0_0_0`) %>% 
+  mutate(extension = lapply(formula, FUN=function(x){eval(parse(text=x))})) %>%
+  rowwise() %>%
+  mutate(card = sum(extension)) %>%
+  select(-formula) %>%
+  left_join(d)
+
+```
+
+# PZ
+
+```{r}
+ib = read.csv('Stochastic_Source_P_Meaning_Z.csv')
+dib = read.csv('Deterministic_Source_P_Meaning_Z.csv')
+rsys = read.csv('Random_Systems.csv') %>%
+  select(Q, Rate=pz_Rate, Distortion=pz_Distortion)
+params = read.csv('Params_Source_P_Meaning_Z.csv') %>%
+  mutate(X=paste0('R', as.character(X)))
+
+source_plot_pz = params %>%
+  ggplot(aes(Element, Source)) +
+  geom_bar(stat='identity') +
+  ylab('Need Probability') +
+  theme_bw(base_size=16)
+
+meaning_plot_pz = params %>%
+  separate(Meaning, params$X, sep='_') %>%
+  gather(Relement, Probability, R0:R15) %>%
+  mutate(Probability = as.numeric(Probability)) %>%
+  ggplot(aes(Element, Probability)) +
+  facet_wrap(~Relement, labeller = elements_labeller) +
+  geom_bar(stat='identity') +
+  theme_bw(base_size=16)
+
+
+frontier_plot_pz = ib %>%
+  ggplot(aes(Rate, Distortion)) +
+  geom_line() +
+  geom_point(data=rsys %>% distinct(), aes(Rate, Distortion), color='grey80') +
+  geom_point(data=dib %>% distinct(), aes(Rate, Distortion)) +
+  theme_bw(base_size=16)
+
+(source_plot_pz + frontier_plot_pz) / meaning_plot_pz
+
+```
+
+```{r}
+dop = dib %>%
+  select(-Beta, -X) %>%
+  distinct() %>%
+  separate(Q, paste0('W',1:16), sep='\n') %>%
+  gather(Word, Extension, W1:W16) %>%
+  filter(!is.na(Extension)) %>%
+  mutate(Extension = str_remove_all(Extension, '\\['),
+         Extension = str_remove_all(Extension, ']')) %>%
+  separate(Extension, paste0('R', 1:16), sep='. ') %>%
+  mutate(across(starts_with('R'), ~as.numeric(.x))) %>%
+  rowwise() %>%
+  mutate(Extension = list(c(R1, R2, R3, R4, R5, R6, R7, R8, 
+                            R9, R10, R11, R12, R13, R14, R15, R16))) %>% 
+  select(-(R1:R16))
+
+rsubo = rsys %>%
+  distinct() %>%
+  separate(Q, paste0('W',1:16), sep='\n') %>%
+  gather(Word, Extension, W1:W16) %>%
+  filter(!is.na(Extension)) %>%
+  mutate(Extension = str_remove_all(Extension, '\\['),
+         Extension = str_remove_all(Extension, ']')) %>%
+  separate(Extension, paste0('R', 1:16), sep='. ') %>%
+  mutate(across(starts_with('R'), ~as.numeric(.x))) %>%
+  rowwise() %>%
+  mutate(Extension = list(c(R1, R2, R3, R4, R5, R6, R7, R8, 
+                            R9, R10, R11, R12, R13, R14, R15, R16))) %>% 
+  select(-(R1:R16)) %>%
+  left_join(d %>% rename(Extension=extension))
+
+subo = rsubo %>%
+  mutate(Need = sum(Extension * params$Source)) %>%
+  group_by(Rate, Distortion) %>%
+  summarise(N=n(), like=mean(log(card)), across(starts_with('X'), ~sum(.x))) %>%
+  gather(LoT, Length, starts_with('X'))
+
+g = dop %>%
+  left_join(d %>% rename(Extension=extension)) %>%
+  mutate(Need = sum(Extension * params$Source)) %>%
+  group_by(Rate, Distortion) %>%
+  summarise(N=n(), like=mean(log(card)), across(starts_with('X'), ~sum(.x))) %>%
+  gather(LoT, Length, starts_with('X'))
+
+len_plot_AON_pz = g %>%
+  filter(LoT == 'X1_1_1_0_0_0_0_0_0') %>%
+  ggplot(aes(Length, like)) +
+  geom_line(linetype=2) +
+  geom_point() +
+  geom_point(data=subo %>% filter(LoT == 'X1_1_1_0_0_0_0_0_0'), 
+             aes(Length, like), color='grey80', alpha=0.5) +
+  theme_bw(base_size=16)
+
+frontier_plot_pz + len_plot_AON_pz
+
+```
+
+```{r, include=FALSE, eval=FALSE}
+
+g %>%
+  ggplot(aes(Length, like)) +
+  facet_wrap_paginate(~LoT, nrow=4, ncol=6, page=4, scales = 'free') +
+  geom_line() +
+  geom_text(aes(label=N)) +
+  geom_point(data=subo, aes(Length, like), color='grey80', alpha=0.5) +
+  theme_bw(base_size=16)
+
+```
+
+# ZP
+
+```{r}
+ib = read.csv('Stochastic_Source_Z_Meaning_P.csv')
+dib = read.csv('Deterministic_Source_Z_Meaning_P.csv')
+rsys = read.csv('Random_Systems.csv') %>%
+  select(Q, Rate=zp_Rate, Distortion=zp_Distortion)
+params = read.csv('Params_Source_Z_Meaning_P.csv') %>%
+  mutate(X=paste0('R', as.character(X)))
+
+source_plot_zp = params %>%
+  ggplot(aes(Element, Source)) +
+  geom_bar(stat='identity') +
+  ylab('Need Probability') +
+  theme_bw(base_size=16)
+
+meaning_plot_zp = params %>%
+  separate(Meaning, params$X, sep='_') %>%
+  gather(Relement, Probability, R0:R15) %>%
+  mutate(Probability = as.numeric(Probability)) %>%
+  ggplot(aes(Element, Probability)) +
+  facet_wrap(~Relement, labeller = elements_labeller) +
+  geom_bar(stat='identity') +
+  theme_bw(base_size=16)
+
+
+frontier_plot_zp = ib %>%
+  ggplot(aes(Rate, Distortion)) +
+  geom_line() +
+  geom_point(data=rsys %>% distinct(), aes(Rate, Distortion), color='grey80') +
+  geom_point(data=dib %>% distinct(), aes(Rate, Distortion)) +
+  theme_bw(base_size=16)
+
+(source_plot_zp + frontier_plot_zp) / meaning_plot_zp
+
+```
+
+```{r}
+dop = dib %>%
+  select(-Beta, -X) %>%
+  distinct() %>%
+  separate(Q, paste0('W',1:16), sep='\n') %>%
+  gather(Word, Extension, W1:W16) %>%
+  filter(!is.na(Extension)) %>%
+  mutate(Extension = str_remove_all(Extension, '\\['),
+         Extension = str_remove_all(Extension, ']')) %>%
+  separate(Extension, paste0('R', 1:16), sep='. ') %>%
+  mutate(across(starts_with('R'), ~as.numeric(.x))) %>%
+  rowwise() %>%
+  mutate(Extension = list(c(R1, R2, R3, R4, R5, R6, R7, R8, 
+                            R9, R10, R11, R12, R13, R14, R15, R16))) %>% 
+  select(-(R1:R16))
+
+rsubo = rsys %>%
+  distinct() %>%
+  separate(Q, paste0('W',1:16), sep='\n') %>%
+  gather(Word, Extension, W1:W16) %>%
+  filter(!is.na(Extension)) %>%
+  mutate(Extension = str_remove_all(Extension, '\\['),
+         Extension = str_remove_all(Extension, ']')) %>%
+  separate(Extension, paste0('R', 1:16), sep='. ') %>%
+  mutate(across(starts_with('R'), ~as.numeric(.x))) %>%
+  rowwise() %>%
+  mutate(Extension = list(c(R1, R2, R3, R4, R5, R6, R7, R8, 
+                            R9, R10, R11, R12, R13, R14, R15, R16))) %>% 
+  select(-(R1:R16)) %>%
+  left_join(d %>% rename(Extension=extension))
+
+subo = rsubo %>%
+  mutate(Need = sum(Extension * params$Source)) %>%
+  group_by(Rate, Distortion) %>%
+  summarise(N=n(), like=mean(log(card)), across(starts_with('X'), ~sum(.x))) %>%
+  gather(LoT, Length, starts_with('X'))
+
+g = dop %>%
+  left_join(d %>% rename(Extension=extension)) %>%
+  mutate(Need = sum(Extension * params$Source)) %>%
+  group_by(Rate, Distortion) %>%
+  summarise(N=n(), like=mean(log(card)), across(starts_with('X'), ~sum(.x))) %>%
+  gather(LoT, Length, starts_with('X'))
+
+len_plot_AON_zp = g %>%
+  filter(LoT == 'X1_1_1_0_0_0_0_0_0') %>%
+  ggplot(aes(Length, like)) +
+  geom_line(linetype=2) +
+  geom_point() +
+  geom_point(data=subo %>% filter(LoT == 'X1_1_1_0_0_0_0_0_0'), 
+             aes(Length, like), color='grey80', alpha=0.5) +
+  theme_bw(base_size=16)
+
+frontier_plot_zp + len_plot_AON_zp
+
+```
+
+```{r, include=FALSE, eval=FALSE}
+
+g %>%
+  ggplot(aes(Length, like)) +
+  facet_wrap_paginate(~LoT, nrow=4, ncol=6, page=4, scales = 'free') +
+  geom_line() +
+  geom_text(aes(label=N)) +
+  geom_point(data=subo, aes(Length, like), color='grey80', alpha=0.5) +
+  theme_bw(base_size=16)
+
+```
+
+# ZZ
+
+```{r}
+ib = read.csv('Stochastic_Source_Z_Meaning_Z.csv')
+dib = read.csv('Deterministic_Source_Z_Meaning_Z.csv')
+rsys = read.csv('Random_Systems.csv') %>%
+  select(Q, Rate=zz_Rate, Distortion=zz_Distortion)
+params = read.csv('Params_Source_Z_Meaning_Z.csv') %>%
+  mutate(X=paste0('R', as.character(X)))
+
+source_plot_zz = params %>%
+  ggplot(aes(Element, Source)) +
+  geom_bar(stat='identity') +
+  ylab('Need Probability') +
+  theme_bw(base_size=16)
+
+meaning_plot_zz = params %>%
+  separate(Meaning, params$X, sep='_') %>%
+  gather(Relement, Probability, R0:R15) %>%
+  mutate(Probability = as.numeric(Probability)) %>%
+  ggplot(aes(Element, Probability)) +
+  facet_wrap(~Relement, labeller = elements_labeller) +
+  geom_bar(stat='identity') +
+  theme_bw(base_size=16)
+
+
+frontier_plot_zz = ib %>%
+  ggplot(aes(Rate, Distortion)) +
+  geom_line() +
+  geom_point(data=rsys %>% distinct(), aes(Rate, Distortion), color='grey80') +
+  geom_point(data=dib %>% distinct(), aes(Rate, Distortion)) +
+  theme_bw(base_size=16)
+
+(source_plot_zz + frontier_plot_zz) / meaning_plot_zz
+
+```
+
+```{r}
+dop = dib %>%
+  select(-Beta, -X) %>%
+  distinct() %>%
+  separate(Q, paste0('W',1:16), sep='\n') %>%
+  gather(Word, Extension, W1:W16) %>%
+  filter(!is.na(Extension)) %>%
+  mutate(Extension = str_remove_all(Extension, '\\['),
+         Extension = str_remove_all(Extension, ']')) %>%
+  separate(Extension, paste0('R', 1:16), sep='. ') %>%
+  mutate(across(starts_with('R'), ~as.numeric(.x))) %>%
+  rowwise() %>%
+  mutate(Extension = list(c(R1, R2, R3, R4, R5, R6, R7, R8, 
+                            R9, R10, R11, R12, R13, R14, R15, R16))) %>% 
+  select(-(R1:R16))
+
+rsubo = rsys %>%
+  distinct() %>%
+  separate(Q, paste0('W',1:16), sep='\n') %>%
+  gather(Word, Extension, W1:W16) %>%
+  filter(!is.na(Extension)) %>%
+  mutate(Extension = str_remove_all(Extension, '\\['),
+         Extension = str_remove_all(Extension, ']')) %>%
+  separate(Extension, paste0('R', 1:16), sep='. ') %>%
+  mutate(across(starts_with('R'), ~as.numeric(.x))) %>%
+  rowwise() %>%
+  mutate(Extension = list(c(R1, R2, R3, R4, R5, R6, R7, R8, 
+                            R9, R10, R11, R12, R13, R14, R15, R16))) %>% 
+  select(-(R1:R16)) %>%
+  left_join(d %>% rename(Extension=extension))
+
+subo = rsubo %>%
+  mutate(Need = sum(Extension * params$Source)) %>%
+  group_by(Rate, Distortion) %>%
+  summarise(N=n(), like=mean(log(card)), across(starts_with('X'), ~sum(.x))) %>%
+  gather(LoT, Length, starts_with('X'))
+
+g = dop %>%
+  left_join(d %>% rename(Extension=extension)) %>%
+  mutate(Need = sum(Extension * params$Source)) %>%
+  group_by(Rate, Distortion) %>%
+  summarise(N=n(), like=mean(log(card)), across(starts_with('X'), ~sum(.x))) %>%
+  gather(LoT, Length, starts_with('X'))
+
+len_plot_AON_zz = g %>%
+  filter(LoT == 'X1_1_1_0_0_0_0_0_0') %>%
+  ggplot(aes(Length, like)) +
+  geom_line(linetype=2) +
+  geom_point() +
+  geom_point(data=subo %>% filter(LoT == 'X1_1_1_0_0_0_0_0_0'), 
+             aes(Length, like), color='grey80', alpha=0.5) +
+  theme_bw(base_size=16)
+
+frontier_plot_zz + len_plot_AON_zz
+
+```
+
+```{r, include=FALSE, eval=FALSE}
+
+g %>%
+  ggplot(aes(Length, like)) +
+  facet_wrap_paginate(~LoT, nrow=4, ncol=6, page=4, scales = 'free') +
+  geom_line() +
+  geom_text(aes(label=N)) +
+  geom_point(data=subo, aes(Length, like), color='grey80', alpha=0.5) +
+  theme_bw(base_size=16)
+
+```
+
+# PP
+
+```{r}
+ib = read.csv('Stochastic_Source_P_Meaning_P.csv')
+dib = read.csv('Deterministic_Source_P_Meaning_P.csv')
+rsys = read.csv('Random_Systems.csv') %>%
+  select(Q, Rate=pp_Rate, Distortion=pp_Distortion)
+params = read.csv('Params_Source_P_Meaning_P.csv') %>%
+  mutate(X=paste0('R', as.character(X)))
+
+source_plot_pp = params %>%
+  ggplot(aes(Element, Source)) +
+  geom_bar(stat='identity') +
+  ylab('Need Probability') +
+  theme_bw(base_size=16)
+
+meaning_plot_pp = params %>%
+  separate(Meaning, params$X, sep='_') %>%
+  gather(Relement, Probability, R0:R15) %>%
+  mutate(Probability = as.numeric(Probability)) %>%
+  ggplot(aes(Element, Probability)) +
+  facet_wrap(~Relement, labeller = elements_labeller) +
+  geom_bar(stat='identity') +
+  theme_bw(base_size=16)
+
+
+frontier_plot_pp = ib %>%
+  ggplot(aes(Rate, Distortion)) +
+  geom_line() +
+  geom_point(data=rsys %>% distinct(), aes(Rate, Distortion), color='grey80') +
+  geom_point(data=dib %>% distinct(), aes(Rate, Distortion)) +
+  theme_bw(base_size=16)
+
+(source_plot_pp + frontier_plot_pp) / meaning_plot_pp
+
+```
+
+```{r}
+dop = dib %>%
+  select(-Beta, -X) %>%
+  distinct() %>%
+  separate(Q, paste0('W',1:16), sep='\n') %>%
+  gather(Word, Extension, W1:W16) %>%
+  filter(!is.na(Extension)) %>%
+  mutate(Extension = str_remove_all(Extension, '\\['),
+         Extension = str_remove_all(Extension, ']')) %>%
+  separate(Extension, paste0('R', 1:16), sep='. ') %>%
+  mutate(across(starts_with('R'), ~as.numeric(.x))) %>%
+  rowwise() %>%
+  mutate(Extension = list(c(R1, R2, R3, R4, R5, R6, R7, R8, 
+                            R9, R10, R11, R12, R13, R14, R15, R16))) %>% 
+  select(-(R1:R16))
+
+rsubo = rsys %>%
+  distinct() %>%
+  separate(Q, paste0('W',1:16), sep='\n') %>%
+  gather(Word, Extension, W1:W16) %>%
+  filter(!is.na(Extension)) %>%
+  mutate(Extension = str_remove_all(Extension, '\\['),
+         Extension = str_remove_all(Extension, ']')) %>%
+  separate(Extension, paste0('R', 1:16), sep='. ') %>%
+  mutate(across(starts_with('R'), ~as.numeric(.x))) %>%
+  rowwise() %>%
+  mutate(Extension = list(c(R1, R2, R3, R4, R5, R6, R7, R8, 
+                            R9, R10, R11, R12, R13, R14, R15, R16))) %>% 
+  select(-(R1:R16)) %>%
+  left_join(d %>% rename(Extension=extension))
+
+subo = rsubo %>%
+  mutate(Need = sum(Extension * params$Source)) %>%
+  group_by(Rate, Distortion) %>%
+  summarise(N=n(), like=mean(log(card)), across(starts_with('X'), ~sum(.x))) %>%
+  gather(LoT, Length, starts_with('X'))
+
+g = dop %>%
+  left_join(d %>% rename(Extension=extension)) %>%
+  mutate(Need = sum(Extension * params$Source)) %>%
+  group_by(Rate, Distortion) %>%
+  summarise(N=n(), like=mean(log(card)), across(starts_with('X'), ~sum(.x))) %>%
+  gather(LoT, Length, starts_with('X'))
+
+len_plot_AON_pp = g %>%
+  filter(LoT == 'X1_1_1_0_0_0_0_0_0') %>%
+  ggplot(aes(Length, like)) +
+  geom_line(linetype=2) +
+  geom_point() +
+  geom_point(data=subo %>% filter(LoT == 'X1_1_1_0_0_0_0_0_0'), 
+             aes(Length, like), color='grey80', alpha=0.5) +
+  theme_bw(base_size=16)
+
+frontier_plot_pp + len_plot_AON_pp
+
+```
+
+```{r, include=FALSE, eval=FALSE}
+
+g %>%
+  ggplot(aes(Length, like)) +
+  facet_wrap_paginate(~LoT, nrow=4, ncol=6, page=4, scales = 'free') +
+  geom_line() +
+  geom_text(aes(label=N)) +
+  geom_point(data=subo, aes(Length, like), color='grey80', alpha=0.5) +
+  theme_bw(base_size=16)
+
+```
+
+# Combined Plots
+
+```{r}
+
+(source_plot_pp + ggtitle('Capacity Source') + source_plot_zz + ggtitle('Zipfian Source') ) / (meaning_plot_pp + ggtitle('Boolean Semantics') + meaning_plot_zz + ggtitle('Permuted Semantics')) + plot_layout(heights = c(1,4))
+ggsave('Figures/params.svg', width=13, height=8)
+
+```
+
+```{r}
+
+(frontier_plot_pp + ggtitle('Capacity') + len_plot_AON_pp + ggtitle('Boolean')) /
+  (frontier_plot_pz + ggtitle('Capacity') + len_plot_AON_pz + ggtitle('Permuted')) /
+  (frontier_plot_zp + ggtitle('Zipfian') + len_plot_AON_zp + ggtitle('Boolean')) /
+  (frontier_plot_zz + ggtitle('Zipfian') + len_plot_AON_zz  + ggtitle('Permuted'))
+ggsave('Figures/AON.svg')
+```
+
+
+```{r}
+#   c('O','A','N','C','B','X','NA','NOR','NC')
+
+# X0_0_0_0_0_0_1_0_0 # NAND
+# X1_1_0_1_1_1_1_1_1 # everything but NOT
+# X0_0_1_1_0_1_0_0_0 # N, C, X
+# X1_0_1_1_0_1_0_0_0 # O, N, C, X
+
+LoT_labs = list('X0_0_0_0_0_0_1_0_0'='NAND', 
+     'X1_1_1_1_1_1_1_1_1'='ALL BOOL', 
+     'X0_0_1_1_0_1_0_0_0'='NOT, COMPLEMENT, XOR', 
+     'X1_0_1_1_0_1_0_0_0'='NOR, OR, COMPLEMENT, XOR')
+
+LoT_labeller <- function(variable,value){
+  return(LoT_labs[value])
+}
+
+g %>%
+  filter(LoT %in% c('X0_0_0_0_0_0_1_0_0', 'X1_1_1_1_1_1_1_1_1', 'X0_0_1_1_0_1_0_0_0', 'X1_0_1_1_0_1_0_0_0' )) %>%
+  ggplot(aes(Length, like)) +
+  facet_wrap(~LoT, nrow=2, scales = 'free', labeller = LoT_labeller) +
+  geom_line() +
+  geom_point() +
+  geom_point(data=subo %>% filter(LoT %in% c('X0_0_0_0_0_0_1_0_0', 'X1_1_1_1_1_1_1_1_1', 'X0_0_1_1_0_1_0_0_0', 'X1_0_1_1_0_1_0_0_0' )), 
+             aes(Length, like), color='grey80', alpha=0.5) +
+  theme_bw(base_size=16)
+ggsave('Figures/DLs.svg')
+
+```
+
+```{r}
+library(xkcd)
+ib %>%
+  ggplot(aes(Rate, Distortion)) +
+  geom_line() +
+  geom_jitter(data=rsys %>% distinct(), aes(Rate, Distortion), color='grey80') +
+  # geom_point(data=dib %>% distinct(), aes(Rate, Distortion)) +
+  theme_xkcd() + theme(text = element_text(size=24))
+ggsave('Figures/pareto.svg')
+
+```

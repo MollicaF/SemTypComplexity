@@ -81,6 +81,12 @@ rsys = read.csv('Random_Systems.csv') %>%
 params = read.csv('Params_Source_P_Meaning_Z.csv') %>%
   mutate(X=paste0('R', as.character(X)))
 
+front.dist_ = function(val1, val2){min(sqrt((val1 - ib$Rate)**2 + (val2 - ib$Distortion)**2))}
+front.dist = Vectorize(front.dist_)
+
+rsys = rsys %>%
+  mutate(FD = front.dist(Rate, Distortion))
+
 source_plot_pz = params %>%
   ggplot(aes(Element, Source)) +
   geom_bar(stat='identity') +
@@ -100,9 +106,11 @@ meaning_plot_pz = params %>%
 frontier_plot_pz = ib %>%
   ggplot(aes(Rate, Distortion)) +
   geom_line() +
-  geom_point(data=rsys %>% distinct(), aes(Rate, Distortion), color='grey80') +
+  geom_point(data=rsys %>% distinct(), aes(Rate, Distortion, color=scale(FD))) +
   geom_point(data=dib %>% distinct(), aes(Rate, Distortion)) +
-  theme_bw(base_size=16)
+  scale_color_gradient2(low='red', mid='grey80', high='blue') +
+  guides(color='none') +
+  theme_bw(base_size=16) 
 
 (source_plot_pz + frontier_plot_pz) / meaning_plot_pz
 
@@ -141,24 +149,25 @@ rsubo = rsys %>%
 
 subo = rsubo %>%
   mutate(Need = sum(Extension * params$Source)) %>%
-  group_by(Rate, Distortion) %>%
-  summarise(N=n(), like=mean(log(card)), across(starts_with('X'), ~sum(.x))) %>%
+  group_by(Rate, Distortion, FD) %>%
+  summarise(N=n(), like=sum(card*log(card))/16, across(starts_with('X'), ~sum(.x))) %>%
   gather(LoT, Length, starts_with('X'))
 
 g = dop %>%
   left_join(d %>% rename(Extension=extension)) %>%
   mutate(Need = sum(Extension * params$Source)) %>%
   group_by(Rate, Distortion) %>%
-  summarise(N=n(), like=mean(log(card)), across(starts_with('X'), ~sum(.x))) %>%
+  summarise(N=n(), like=sum(card*log(card))/16, across(starts_with('X'), ~sum(.x))) %>%
   gather(LoT, Length, starts_with('X'))
 
 len_plot_AON_pz = g %>%
   filter(LoT == 'X1_1_1_0_0_0_0_0_0') %>%
-  ggplot(aes(Length, like)) +
+  ggplot(aes(Length, Distortion)) +
   geom_line(linetype=2) +
   geom_point() +
   geom_point(data=subo %>% filter(LoT == 'X1_1_1_0_0_0_0_0_0'), 
-             aes(Length, like), color='grey80', alpha=0.5) +
+             aes(Length, Distortion, color=scale(FD)), alpha=0.5) +
+  scale_color_gradient2(low='red', mid='grey80', high='blue') +
   theme_bw(base_size=16)
 
 frontier_plot_pz + len_plot_AON_pz
@@ -187,6 +196,12 @@ rsys = read.csv('Random_Systems.csv') %>%
 params = read.csv('Params_Source_Z_Meaning_P.csv') %>%
   mutate(X=paste0('R', as.character(X)))
 
+front.dist_ = function(val1, val2){min(sqrt((val1 - ib$Rate)**2 + (val2 - ib$Distortion)**2))}
+front.dist = Vectorize(front.dist_)
+
+rsys = rsys %>%
+  mutate(FD = front.dist(Rate, Distortion))
+
 source_plot_zp = params %>%
   ggplot(aes(Element, Source)) +
   geom_bar(stat='identity') +
@@ -206,8 +221,10 @@ meaning_plot_zp = params %>%
 frontier_plot_zp = ib %>%
   ggplot(aes(Rate, Distortion)) +
   geom_line() +
-  geom_point(data=rsys %>% distinct(), aes(Rate, Distortion), color='grey80') +
+  geom_point(data=rsys %>% distinct(), aes(Rate, Distortion, color=scale(FD))) +
   geom_point(data=dib %>% distinct(), aes(Rate, Distortion)) +
+  scale_color_gradient2(low='red', mid='grey80', high='blue') +
+  guides(color='none') +
   theme_bw(base_size=16)
 
 (source_plot_zp + frontier_plot_zp) / meaning_plot_zp
@@ -247,24 +264,25 @@ rsubo = rsys %>%
 
 subo = rsubo %>%
   mutate(Need = sum(Extension * params$Source)) %>%
-  group_by(Rate, Distortion) %>%
-  summarise(N=n(), like=mean(log(card)), across(starts_with('X'), ~sum(.x))) %>%
+  group_by(Rate, Distortion, FD) %>%
+  summarise(N=n(), like=sum(card*log(card))/16, across(starts_with('X'), ~sum(.x))) %>%
   gather(LoT, Length, starts_with('X'))
 
 g = dop %>%
   left_join(d %>% rename(Extension=extension)) %>%
   mutate(Need = sum(Extension * params$Source)) %>%
   group_by(Rate, Distortion) %>%
-  summarise(N=n(), like=mean(log(card)), across(starts_with('X'), ~sum(.x))) %>%
+  summarise(N=n(), like=sum(card*log(card))/16, across(starts_with('X'), ~sum(.x))) %>%
   gather(LoT, Length, starts_with('X'))
 
 len_plot_AON_zp = g %>%
   filter(LoT == 'X1_1_1_0_0_0_0_0_0') %>%
-  ggplot(aes(Length, like)) +
+  ggplot(aes(Length, Distortion)) +
   geom_line(linetype=2) +
   geom_point() +
   geom_point(data=subo %>% filter(LoT == 'X1_1_1_0_0_0_0_0_0'), 
-             aes(Length, like), color='grey80', alpha=0.5) +
+             aes(Length, Distortion, color=scale(FD)), alpha=0.5) +
+  scale_color_gradient2(low='red', mid='grey80', high='blue') +
   theme_bw(base_size=16)
 
 frontier_plot_zp + len_plot_AON_zp
@@ -281,6 +299,17 @@ g %>%
   geom_point(data=subo, aes(Length, like), color='grey80', alpha=0.5) +
   theme_bw(base_size=16)
 
+g %>%
+  ggplot(aes(Length, Distortion)) +
+  facet_wrap_paginate(~LoT, nrow=4, ncol=6, page=1, scales = 'free') +
+  geom_line() +
+  geom_point(data=subo, aes(Length, Distortion), color='grey80', alpha=0.5) +
+  geom_point() +
+  theme_bw(base_size=16)
+
+
+
+
 ```
 
 # ZZ
@@ -292,6 +321,12 @@ rsys = read.csv('Random_Systems.csv') %>%
   select(Q, Rate=zz_Rate, Distortion=zz_Distortion)
 params = read.csv('Params_Source_Z_Meaning_Z.csv') %>%
   mutate(X=paste0('R', as.character(X)))
+
+front.dist_ = function(val1, val2){min(sqrt((val1 - ib$Rate)**2 + (val2 - ib$Distortion)**2))}
+front.dist = Vectorize(front.dist_)
+
+rsys = rsys %>%
+  mutate(FD = front.dist(Rate, Distortion))
 
 source_plot_zz = params %>%
   ggplot(aes(Element, Source)) +
@@ -312,8 +347,10 @@ meaning_plot_zz = params %>%
 frontier_plot_zz = ib %>%
   ggplot(aes(Rate, Distortion)) +
   geom_line() +
-  geom_point(data=rsys %>% distinct(), aes(Rate, Distortion), color='grey80') +
+  geom_point(data=rsys %>% distinct(), aes(Rate, Distortion, color=scale(FD))) +
   geom_point(data=dib %>% distinct(), aes(Rate, Distortion)) +
+  scale_color_gradient2(low='red', mid='grey80', high='blue') +
+  guides(color='none') +
   theme_bw(base_size=16)
 
 (source_plot_zz + frontier_plot_zz) / meaning_plot_zz
@@ -353,24 +390,25 @@ rsubo = rsys %>%
 
 subo = rsubo %>%
   mutate(Need = sum(Extension * params$Source)) %>%
-  group_by(Rate, Distortion) %>%
-  summarise(N=n(), like=mean(log(card)), across(starts_with('X'), ~sum(.x))) %>%
+  group_by(Rate, Distortion, FD) %>%
+  summarise(N=n(), like=sum(card*log(card))/16, across(starts_with('X'), ~sum(.x))) %>%
   gather(LoT, Length, starts_with('X'))
 
 g = dop %>%
   left_join(d %>% rename(Extension=extension)) %>%
   mutate(Need = sum(Extension * params$Source)) %>%
   group_by(Rate, Distortion) %>%
-  summarise(N=n(), like=mean(log(card)), across(starts_with('X'), ~sum(.x))) %>%
+  summarise(N=n(), like=sum(card*log(card))/16, across(starts_with('X'), ~sum(.x))) %>%
   gather(LoT, Length, starts_with('X'))
 
 len_plot_AON_zz = g %>%
   filter(LoT == 'X1_1_1_0_0_0_0_0_0') %>%
-  ggplot(aes(Length, like)) +
+  ggplot(aes(Length, Distortion)) +
   geom_line(linetype=2) +
   geom_point() +
   geom_point(data=subo %>% filter(LoT == 'X1_1_1_0_0_0_0_0_0'), 
-             aes(Length, like), color='grey80', alpha=0.5) +
+             aes(Length, Distortion, color=scale(FD)), alpha=0.5) +
+  scale_color_gradient2(low='red', mid='grey80', high='blue') +
   theme_bw(base_size=16)
 
 frontier_plot_zz + len_plot_AON_zz
@@ -387,6 +425,16 @@ g %>%
   geom_point(data=subo, aes(Length, like), color='grey80', alpha=0.5) +
   theme_bw(base_size=16)
 
+g %>%
+  ggplot(aes(Length, Distortion)) +
+  facet_wrap_paginate(~LoT, nrow=4, ncol=6, page=4, scales = 'free') +
+  geom_line() +
+  geom_point(data=subo, aes(Length, Distortion), color='grey80', alpha=0.5) +
+  geom_point() +
+  theme_bw(base_size=16)
+
+
+
 ```
 
 # PP
@@ -398,6 +446,12 @@ rsys = read.csv('Random_Systems.csv') %>%
   select(Q, Rate=pp_Rate, Distortion=pp_Distortion)
 params = read.csv('Params_Source_P_Meaning_P.csv') %>%
   mutate(X=paste0('R', as.character(X)))
+
+front.dist_ = function(val1, val2){min(sqrt((val1 - ib$Rate)**2 + (val2 - ib$Distortion)**2))}
+front.dist = Vectorize(front.dist_)
+
+rsys = rsys %>%
+  mutate(FD = front.dist(Rate, Distortion))
 
 source_plot_pp = params %>%
   ggplot(aes(Element, Source)) +
@@ -418,8 +472,10 @@ meaning_plot_pp = params %>%
 frontier_plot_pp = ib %>%
   ggplot(aes(Rate, Distortion)) +
   geom_line() +
-  geom_point(data=rsys %>% distinct(), aes(Rate, Distortion), color='grey80') +
+  geom_point(data=rsys %>% distinct(), aes(Rate, Distortion, color=scale(FD))) +
   geom_point(data=dib %>% distinct(), aes(Rate, Distortion)) +
+  scale_color_gradient2(low='red', mid='grey80', high='blue') +
+  guides(color='none') +
   theme_bw(base_size=16)
 
 (source_plot_pp + frontier_plot_pp) / meaning_plot_pp
@@ -459,24 +515,25 @@ rsubo = rsys %>%
 
 subo = rsubo %>%
   mutate(Need = sum(Extension * params$Source)) %>%
-  group_by(Rate, Distortion) %>%
-  summarise(N=n(), like=mean(log(card)), across(starts_with('X'), ~sum(.x))) %>%
+  group_by(Rate, Distortion, FD) %>%
+  summarise(N=n(), like=sum(card*log(card))/16, across(starts_with('X'), ~sum(.x))) %>%
   gather(LoT, Length, starts_with('X'))
 
 g = dop %>%
   left_join(d %>% rename(Extension=extension)) %>%
   mutate(Need = sum(Extension * params$Source)) %>%
   group_by(Rate, Distortion) %>%
-  summarise(N=n(), like=mean(log(card)), across(starts_with('X'), ~sum(.x))) %>%
+  summarise(N=n(), like=sum(card*log(card))/16, across(starts_with('X'), ~sum(.x))) %>%
   gather(LoT, Length, starts_with('X'))
 
 len_plot_AON_pp = g %>%
   filter(LoT == 'X1_1_1_0_0_0_0_0_0') %>%
-  ggplot(aes(Length, like)) +
+  ggplot(aes(Length, Distortion)) +
   geom_line(linetype=2) +
   geom_point() +
   geom_point(data=subo %>% filter(LoT == 'X1_1_1_0_0_0_0_0_0'), 
-             aes(Length, like), color='grey80', alpha=0.5) +
+             aes(Length, Distortion, color=scale(FD)), alpha=0.5) +
+  scale_color_gradient2(low='red', mid='grey80', high='blue') +
   theme_bw(base_size=16)
 
 frontier_plot_pp + len_plot_AON_pp
@@ -486,12 +543,22 @@ frontier_plot_pp + len_plot_AON_pp
 ```{r, include=FALSE, eval=FALSE}
 
 g %>%
-  ggplot(aes(Length, like)) +
-  facet_wrap_paginate(~LoT, nrow=4, ncol=6, page=4, scales = 'free') +
+  ggplot(aes(Length, Distortion)) +
+  facet_wrap_paginate(~LoT, nrow=4, ncol=6, page=1, scales = 'free') +
   geom_line() +
-  geom_text(aes(label=N)) +
   geom_point(data=subo, aes(Length, like), color='grey80', alpha=0.5) +
+  geom_point() +
   theme_bw(base_size=16)
+
+g %>%
+  ggplot(aes(Length, Distortion)) +
+  facet_wrap_paginate(~LoT, nrow=4, ncol=6, page=3, scales = 'free') +
+  geom_line() +
+  geom_point(data=subo, aes(Length, Distortion), color='grey80', alpha=0.5) +
+  geom_point() +
+  theme_bw(base_size=16)
+
+
 
 ```
 
@@ -500,7 +567,7 @@ g %>%
 ```{r}
 
 (source_plot_pp + ggtitle('Capacity Source') + source_plot_zz + ggtitle('Zipfian Source') ) / (meaning_plot_pp + ggtitle('Boolean Semantics') + meaning_plot_zz + ggtitle('Permuted Semantics')) + plot_layout(heights = c(1,4))
-ggsave('Figures/params.svg', width=13, height=8)
+#ggsave('Figures/params.svg', width=13, height=8)
 
 ```
 
@@ -510,7 +577,7 @@ ggsave('Figures/params.svg', width=13, height=8)
   (frontier_plot_pz + ggtitle('Capacity') + len_plot_AON_pz + ggtitle('Permuted')) /
   (frontier_plot_zp + ggtitle('Zipfian') + len_plot_AON_zp + ggtitle('Boolean')) /
   (frontier_plot_zz + ggtitle('Zipfian') + len_plot_AON_zz  + ggtitle('Permuted'))
-ggsave('Figures/AON.svg')
+#ggsave('Figures/AON.svg')
 ```
 
 
@@ -535,12 +602,13 @@ g %>%
   filter(LoT %in% c('X0_0_0_0_0_0_1_0_0', 'X1_1_1_1_1_1_1_1_1', 'X0_0_1_1_0_1_0_0_0', 'X1_0_1_1_0_1_0_0_0' )) %>%
   ggplot(aes(Length, like)) +
   facet_wrap(~LoT, nrow=2, scales = 'free', labeller = LoT_labeller) +
-  geom_line() +
+  geom_line(linetype=2) +
   geom_point() +
   geom_point(data=subo %>% filter(LoT %in% c('X0_0_0_0_0_0_1_0_0', 'X1_1_1_1_1_1_1_1_1', 'X0_0_1_1_0_1_0_0_0', 'X1_0_1_1_0_1_0_0_0' )), 
-             aes(Length, like), color='grey80', alpha=0.5) +
+             aes(Length, like, color=scale(FD)), alpha=0.5) +
+  scale_color_gradient2(low='red', mid='grey80', high='blue') +
   theme_bw(base_size=16)
-ggsave('Figures/DLs.svg')
+#ggsave('Figures/DLs.svg')
 
 ```
 
@@ -552,6 +620,7 @@ ib %>%
   geom_jitter(data=rsys %>% distinct(), aes(Rate, Distortion), color='grey80') +
   # geom_point(data=dib %>% distinct(), aes(Rate, Distortion)) +
   theme_xkcd() + theme(text = element_text(size=24))
-ggsave('Figures/pareto.svg')
+#ggsave('Figures/pareto.svg')
 
 ```
+
